@@ -16,3 +16,4 @@ self.addEventListener('fetch',e=>{
     })).catch(()=>caches.match('./index.html'))
   );
 });
+// v2 hotovo
