@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vysloboď pokémonov - Edu PWA v8.58</title>
+    <title>Vysloboď pokémonov - Edu PWA v8.57</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#d32f2f">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -58,7 +58,7 @@
     </script>
     <script>
         // --- KONŠTANTY A STAV ---
-        const APP_VERSION = "8.58";
+        const APP_VERSION = "8.57";
         const GEN_TOTALS = { 1: 151, 2: 100, 3: 135, 4: 107, 5: 156, 6: 72, 7: 88, 8: 96, 9: 120 };
 
         let POKEMON_DATA = [], WORDS_DATABASE = [], currentUserName = null, unlockedIds = [];
@@ -67,21 +67,12 @@
 
         const DEFAULT_PARENTAL = { 
             pin: "0000", dailyLimit: 50, skEnLock: true, showNotice: false,
-            noticeText: "⚠️ Tu môžete napísať vlastný odkaz",
+            noticeText: "⚠️ Testovacia verzia - funkcie môžu byť obmedzené",
             darkMode: false, autoDarkMode: true, autoDarkStart: 19, autoDarkEnd: 7
         };
 // --- RESET GLOBÁLNYCH NASTAVENÍ PRI NOVEJ VERZII ---
 const STORED_VERSION = localStorage.getItem('poke_app_version');
 if (STORED_VERSION !== APP_VERSION) {
-    // zobraz oznam o aktualizácii
-    window.addEventListener('DOMContentLoaded', () => {
-        const m = document.getElementById('modal');
-        if (m) {
-            m.classList.remove('hidden');
-            m.innerHTML = `<div class="bg-white dark:bg-slate-800 p-10 rounded-[3rem] max-w-sm w-full text-center shadow-2xl border-4 border-blue-200 dark:border-blue-900 animate-fade"><div class="text-5xl mb-4">🔄</div><h2 class="text-2xl font-black text-blue-900 dark:text-blue-300 uppercase mb-3 tracking-tighter font-black">Aplikácia sa aktualizuje</h2><p class="text-gray-600 dark:text-gray-300 mb-6 font-medium font-black">Sťahujem dáta pre verziu ${APP_VERSION}...</p><div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div></div>`;
-            setTimeout(() => m.classList.add('hidden'), 2200);
-        }
-    });
     localStorage.setItem('poke_global_parental', JSON.stringify(DEFAULT_PARENTAL));
     localStorage.setItem('poke_app_version', APP_VERSION);
 }
@@ -150,6 +141,50 @@ if (STORED_VERSION !== APP_VERSION) {
                 ut.onend = () => { if (onEndCallback) onEndCallback(); };
                 window.speechSynthesis.speak(ut);
             } catch (e) { if (onEndCallback) onEndCallback(); }
+        };
+
+        // --- NOVÉ ZVUKY - VYLEPŠENÉ ---
+        const playKlaxon = () => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                const filter = ctx.createBiquadFilter();
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(180, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(90, ctx.currentTime + 1.0);
+                filter.type = 'lowpass';
+                filter.frequency.value = 800;
+                gain.gain.setValueAtTime(0.8, ctx.currentTime);
+                gain.gain.linearRampToValueAtTime(0.8, ctx.currentTime + 0.9);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 1.0);
+                osc.connect(filter).connect(gain).connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 1.05);
+            } catch(e) {}
+        };
+
+        const playCelebration = () => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                // fanfára - dlhšia a výraznejšia
+                const notes = [
+                    {f: 523, t:0, d:0.3}, {f:659, t:0.3, d:0.3}, {f:784, t:0.6, d:0.4},
+                    {f:1046, t:1.1, d:0.5}
+                ];
+                notes.forEach(n => {
+                    const o = ctx.createOscillator();
+                    const g = ctx.createGain();
+                    o.type = 'triangle';
+                    o.frequency.value = n.f;
+                    g.gain.setValueAtTime(0, ctx.currentTime + n.t);
+                    g.gain.linearRampToValueAtTime(0.5, ctx.currentTime + n.t + 0.02);
+                    g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + n.t + n.d);
+                    o.connect(g).connect(ctx.destination);
+                    o.start(ctx.currentTime + n.t);
+                    o.stop(ctx.currentTime + n.t + n.d + 0.05);
+                });
+            } catch(e) {}
         };
 
         const getAllLocalProfiles = () => { try { return JSON.parse(localStorage.getItem('poke_edu_profiles')) || {}; } catch (e) { return {}; } };
@@ -281,7 +316,8 @@ if (STORED_VERSION !== APP_VERSION) {
                 else {
                     currentTask.errorMadeInThisTask = true;
                     document.getElementById(`btn-math-${choice}`)?.classList.add('bg-red-500', 'text-white');
-                    speak("Skús to znova!", "sk-SK");
+                    playKlaxon();
+                    setTimeout(() => speak("Chyba! Strácaš kredit. Skús to znova!", "sk-SK"), 1100);
                 }
             } else {
                 const target = currentTask.targets[currentTask.currentTargetIndex];
@@ -295,7 +331,8 @@ if (STORED_VERSION !== APP_VERSION) {
                 } else {
                     currentTask.errorMadeInThisTask = true; 
                     document.getElementById(`btn-${choice}`)?.classList.add('bg-red-500', 'text-white');
-                    speak("Skús to znova!", "sk-SK");
+                    playKlaxon();
+                    setTimeout(() => speak("Chyba! Strácaš kredit. Skús to znova!", "sk-SK"), 1100);
                     setTimeout(render, 500);
                 }
             }
@@ -305,7 +342,27 @@ if (STORED_VERSION !== APP_VERSION) {
             stats.taskCounter++;
             const curGen = getCurrentLevelGen();
             const targetPokemon = POKEMON_DATA.find(p => p.gen == curGen && !unlockedIds.includes(p.id)) || POKEMON_DATA.find(p => !unlockedIds.includes(p.id));
-            if (targetPokemon) { unlockedIds.push(targetPokemon.id); stats.unlockedToday++; openDetailModal(targetPokemon, true); }
+            if (targetPokemon) { 
+                unlockedIds.push(targetPokemon.id); 
+                stats.unlockedToday++;
+                // --- KONTROLA DOKONČENIA GENERÁCIE ---
+                const genCount = POKEMON_DATA.filter(p => p.gen === targetPokemon.gen && unlockedIds.includes(p.id)).length;
+                if (genCount === GEN_TOTALS[targetPokemon.gen]) {
+                    // 1) fanfára (1.6s)
+                    playCelebration();
+                    // 2) pauza, potom otvor modal (aby sa zvuky neprekrývali)
+                    setTimeout(() => {
+                        openDetailModal(targetPokemon, true);
+                        // 3) po skončení úvodnej reči v modale pridaj pochvalu za generáciu
+                        setTimeout(() => {
+                            const praise = PRAISE_WORDS[Math.floor(Math.random() * PRAISE_WORDS.length)];
+                            speak(`${praise}! Dokončil si ${targetPokemon.gen}. generáciu!`, "sk-SK");
+                        }, 3800);
+                    }, 1700);
+                } else {
+                    openDetailModal(targetPokemon, true);
+                }
+            }
             setTimeout(nextTask, 500);
         }
 
