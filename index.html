@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vysloboď pokémonov - Edu PWA v8.59</title>
+    <title>Vysloboď pokémonov - Edu PWA v8.60</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#d32f2f">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -14,19 +14,18 @@ FIREBASE DOČASNE VYPNUTÝ - ponechané pre budúce použitie
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   const firebaseConfig = {
-    apiKey: "SEM_VLOZ_apiKey",
+    apiKey: "AIzaSyAgdKGQ79_sfMc49R2uewi_qqNR0c0nw1c",
     authDomain: "pokemonmajster-c1f6d.firebaseapp.com",
     projectId: "pokemonmajster-c1f6d",
-    storageBucket: "pokemonmajster-c1f6d.appspot.com",
-    messagingSenderId: "SEM_VLOZ",
-    appId: "SEM_VLOZ"
+    storageBucket: "pokemonmajster-c1f6d.firebasestorage.app",
+    messagingSenderId: "860913054796",
+    appId: "1:860913054796:web:71015716c812b4e5d1f0e9"
   };
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   window.cloudDB = { db, doc, setDoc, getDoc };
   console.log("Firebase pripravený");
 </script>
--->
 
 
     
@@ -55,7 +54,7 @@ FIREBASE DOČASNE VYPNUTÝ - ponechané pre budúce použitie
     </script>
     <script>
         // --- KONŠTANTY A STAV ---
-        const APP_VERSION = "8.59";
+        const APP_VERSION = "8.60";
         const GEN_TOTALS = { 1: 151, 2: 100, 3: 135, 4: 107, 5: 156, 6: 72, 7: 88, 8: 96, 9: 120 };
         const GEN_NAMES = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar', 9: 'Paldea' };
 
@@ -96,6 +95,21 @@ if (IS_UPDATE) {
         };
 
         let globalParental = loadGlobalParental();
+        // --- SYNC INDIKÁTOR ---
+        window.addEventListener('DOMContentLoaded', () => {
+            const ind = document.createElement('div');
+            ind.id = 'sync-indicator';
+            ind.style.cssText = 'position:fixed;bottom:8px;right:8px;background:rgba(0,0,0,0.65);color:#fff;padding:5px 10px;border-radius:14px;font-size:11px;font-family:Plus Jakarta Sans,sans-serif;z-index:9999;pointer-events:none;transition:all 0.3s;';
+            ind.innerHTML = '☁️ lokálne';
+            document.body.appendChild(ind);
+            window.updateSyncStatus = (state) => {
+                if(state==='saving'){ ind.innerHTML='☁️ ukladám...'; ind.style.background='rgba(37,99,235,0.85)'; }
+                else if(state==='synced'){ ind.innerHTML='✓ synchronizované'; ind.style.background='rgba(22,163,74,0.85)'; setTimeout(()=>{ ind.innerHTML='☁️'; ind.style.background='rgba(0,0,0,0.65)'; }, 2000); }
+                else if(state==='error'){ ind.innerHTML='⚠ chyba'; ind.style.background='rgba(220,38,38,0.85)'; }
+                else { ind.innerHTML='☁️ lokálne'; ind.style.background='rgba(0,0,0,0.65)'; }
+            };
+        });
+
         let parental = { ...globalParental };
 
         let stats = { unlockedToday: 0, lastDate: new Date().toLocaleDateString(), completedWords: [], taskCounter: 0, errorsToday: 0, mathAQueue: [], mathBQueue: [] };
@@ -215,20 +229,24 @@ if (IS_UPDATE) {
             const userName = specificName || currentUserName;
             if (!userName) return;
             const profiles = getAllLocalProfiles();
-            profiles[userName] = { unlockedIds, parental, stats, lastUpdate: new Date() };
+            const now = Date.now();
+            profiles[userName] = { unlockedIds, parental, stats, lastUpdate: now };
             localStorage.setItem('poke_edu_profiles', JSON.stringify(profiles));
             updateAllProfilesList();
-            /* CLOUD SAVE VYPNUTÝ
-            if (navigator.onLine && window.cloudDB && userName) {
-                try {
-                    window.cloudDB.setDoc(
-                        window.cloudDB.doc(window.cloudDB.db, "users", userName),
-                        { unlockedIds, stats, parental, version: APP_VERSION, updatedAt: Date.now() },
-                        { merge: true }
-                    );
-                } catch(e) { console.log('Cloud save chyba', e); }
-            }
-            */
+            // TICHÁ SYNCHRONIZÁCIA - debounce 2s
+            if (window.cloudSyncTimer) clearTimeout(window.cloudSyncTimer);
+            window.cloudSyncTimer = setTimeout(() => {
+                if (navigator.onLine && window.cloudDB && userName) {
+                    try {
+                        if(window.updateSyncStatus) window.updateSyncStatus('saving');
+                        window.cloudDB.setDoc(
+                            window.cloudDB.doc(window.cloudDB.db, "users", userName),
+                            { unlockedIds, stats, parental, version: APP_VERSION, updatedAt: now },
+                            { merge: true }
+                        ).then(()=>{ if(window.updateSyncStatus) window.updateSyncStatus('synced'); }).catch(e=>{ console.log('Cloud save chyba', e); if(window.updateSyncStatus) window.updateSyncStatus('error'); });
+                    } catch(e) { console.log('Cloud save chyba', e); if(window.updateSyncStatus) window.updateSyncStatus('error'); }
+                }
+            }, 2000);
         }
 
         function updateAllProfilesList() { 
@@ -237,47 +255,52 @@ if (IS_UPDATE) {
         }
 
         async function loadUserData(userName) {
-    /* CLOUD SYNC VYPNUTÝ
+    const profiles = getAllLocalProfiles();
+    let localData = profiles[userName] || null;
+
+    // 1. OKAMŽITÉ LOKÁLNE NAČÍTANIE
+    if (localData) {
+        unlockedIds = localData.unlockedIds || [];
+        parental = { ...globalParental, ...(localData.parental || {}) };
+        stats = { unlockedToday: 0, lastDate: new Date().toLocaleDateString(), completedWords: [], taskCounter: 0, errorsToday: 0, mathAQueue: [], mathBQueue: [], ...(localData.stats || {}) };
+        const today = new Date().toLocaleDateString();
+        if (stats.lastDate !== today) { stats.unlockedToday = 0; stats.errorsToday = 0; stats.lastDate = today; }
+    } else {
+        unlockedIds = [];
+        parental = { ...globalParental };
+        stats = { unlockedToday: 0, lastDate: new Date().toLocaleDateString(), completedWords: [], taskCounter: 0, errorsToday: 0, mathAQueue: [], mathBQueue: [] };
+    }
+    applyVisualTheme();
+
+    // 2. TICHÁ SYNCHRONIZÁCIA NA POZADÍ
     if (navigator.onLine && window.cloudDB) {
         try {
             const snap = await window.cloudDB.getDoc(window.cloudDB.doc(window.cloudDB.db, "users", userName));
             if (snap.exists()) {
                 const cloud = snap.data();
-                unlockedIds = cloud.unlockedIds || [];
-                stats = { unlockedToday: 0, lastDate: new Date().toLocaleDateString(), completedWords: [], taskCounter: 0, ...(cloud.stats || {}) };
-                parental = { ...globalParental, ...(cloud.parental || {}) };
-                const today = new Date().toLocaleDateString();
-                if (stats.lastDate !== today) { stats.unlockedToday = 0; stats.lastDate = today; }
-                const profiles = getAllLocalProfiles();
-                profiles[userName] = { unlockedIds, parental, stats, lastUpdate: new Date() };
-                localStorage.setItem('poke_edu_profiles', JSON.stringify(profiles));
-                updateAllProfilesList();
-                return;
+                const cloudTime = cloud.updatedAt || 0;
+                const localTime = localData?.lastUpdate || 0;
+                
+                if (!localData || cloudTime > localTime) {
+                    // Cloud je novší - prepíš lokál
+                    unlockedIds = cloud.unlockedIds || [];
+                    parental = { ...globalParental, ...(cloud.parental || {}) };
+                    stats = { unlockedToday: 0, lastDate: new Date().toLocaleDateString(), completedWords: [], taskCounter: 0, errorsToday: 0, mathAQueue: [], mathBQueue: [], ...(cloud.stats || {}) };
+                    const today = new Date().toLocaleDateString();
+                    if (stats.lastDate !== today) { stats.unlockedToday = 0; stats.errorsToday = 0; stats.lastDate = today; }
+                    
+                    const profiles2 = getAllLocalProfiles();
+                    profiles2[userName] = { unlockedIds, parental, stats, lastUpdate: cloudTime };
+                    localStorage.setItem('poke_edu_profiles', JSON.stringify(profiles2));
+                    updateAllProfilesList();
+                    
+                    if(window.updateSyncStatus) window.updateSyncStatus('synced');
+                    if (currentUserName === userName && activeScreen === 'game') render();
+                }
             }
         } catch(e) { console.log('Cloud load chyba', e); }
     }
-    */
-    // --- pokračuj lokálne ---
-            const profiles = getAllLocalProfiles();
-            if (profiles[userName]) {
-                const p = profiles[userName];
-                unlockedIds = p.unlockedIds || [];
-                // Ak má používateľ vlastné nastavenia, použijú sa, inak sa použijú globálne
-                parental = { 
-                    ...globalParental,
-                    ...(p.parental || {}) 
-                };
-                stats = { unlockedToday: 0, lastDate: new Date().toLocaleDateString(), completedWords: [], taskCounter: 0, errorsToday: 0, mathAQueue: [], mathBQueue: [], ...(p.stats || {}) };
-                const today = new Date().toLocaleDateString();
-                if (stats.lastDate !== today) { stats.unlockedToday = 0; stats.lastDate = today; }
-            } else {
-                unlockedIds = [];
-                stats = { unlockedToday: 0, lastDate: new Date().toLocaleDateString(), completedWords: [], taskCounter: 0, errorsToday: 0, mathAQueue: [], mathBQueue: [] };
-                // Nový riešiteľ dostane aktuálne GLOBÁLNE nastavenia
-                parental = { ...globalParental };
-            }
-            applyVisualTheme();
-        }
+}
 
         window.nextTask = () => {
             if ((stats.unlockedToday + (stats.errorsToday||0)) >= parental.dailyLimit) { currentTask = { limitReached: true }; render(); return; }
@@ -433,9 +456,9 @@ if (IS_UPDATE) {
                 return;
             }
             isLoading = true; render();
-            setTimeout(() => {
+            setTimeout(async () => {
                 const isNew = !profiles[name];
-                currentUserName = name; loadUserData(name); activeScreen = 'game'; nextTask();
+                currentUserName = name; await loadUserData(name); activeScreen = 'game'; nextTask();
                 isLoading = false; render();
                 setTimeout(() => speak(`Vítaj ${name}. Svojimi znalosťami môžeš vyslobodiť pokémonov z databázy. Poďme na to!`, "sk-SK"), 600);
             }, 800);
