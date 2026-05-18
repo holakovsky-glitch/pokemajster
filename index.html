@@ -14,13 +14,13 @@ FIREBASE DOČASNE VYPNUTÝ - ponechané pre budúce použitie
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
   import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
   const firebaseConfig = {
-    apiKey: "AIzaSyAgdKGQ79_sfMc49R2uewi_qqNR0c0nw1c",
-    authDomain: "pokemonmajster-c1f6d.firebaseapp.com",
-    projectId: "pokemonmajster-c1f6d",
-    storageBucket: "pokemonmajster-c1f6d.firebasestorage.app",
-    messagingSenderId: "860913054796",
-    appId: "1:860913054796:web:71015716c812b4e5d1f0e9"
-  };
+      apiKey: "AIzaSyAgdKGQ79_sfMc49R2uewi_qqNR0c0nW1c",
+      authDomain: "pokemonmajster-c1f6d.firebaseapp.com",
+      projectId: "pokemonmajster-c1f6d",
+      storageBucket: "pokemonmajster-c1f6d.firebasestorage.app",
+      messagingSenderId: "860913054796",
+      appId: "1:860913054796:web:71015716c812b4e5d1f0e9"
+    };
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   window.cloudDB = { db, doc, setDoc, getDoc };
