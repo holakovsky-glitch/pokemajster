@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vysloboď pokémonov - Edu PWA v8.62</title>
+    <title>Vysloboď pokémonov - Edu PWA v8.63</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#d32f2f">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -11,8 +11,9 @@
 <!--
 FIREBASE DOČASNE VYPNUTÝ - ponechané pre budúce použitie
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  console.log('Loading Firebase...');
+  import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.12.2/app/+esm";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://cdn.jsdelivr.net/npm/firebase@10.12.2/firestore/+esm";
   const firebaseConfig = {
       apiKey: "AIzaSyAgdKGQ79_sfMc49R2uewi_qqNR0c0nW1c",
       authDomain: "pokemonmajster-c1f6d.firebaseapp.com",
@@ -21,10 +22,12 @@ FIREBASE DOČASNE VYPNUTÝ - ponechané pre budúce použitie
       messagingSenderId: "860913054796",
       appId: "1:860913054796:web:71015716c812b4e5d1f0e9"
   };
-  const app = initializeApp(firebaseConfig);
-  const db = getFirestore(app);
-  window.cloudDB = { db, doc, setDoc, getDoc, onSnapshot };
-  console.log("Firebase pripravený");
+  try {
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    window.cloudDB = { db, doc, setDoc, getDoc, onSnapshot };
+    console.log("Firebase pripravený", window.cloudDB);
+  } catch(e){ console.error('Firebase init error', e); }
 </script>
 
 
@@ -54,7 +57,7 @@ FIREBASE DOČASNE VYPNUTÝ - ponechané pre budúce použitie
     </script>
     <script>
         // --- KONŠTANTY A STAV ---
-        const APP_VERSION = "8.62";
+        const APP_VERSION = "8.63";
         const GEN_TOTALS = { 1: 151, 2: 100, 3: 135, 4: 107, 5: 156, 6: 72, 7: 88, 8: 96, 9: 120 };
         const GEN_NAMES = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar', 9: 'Paldea' };
 
