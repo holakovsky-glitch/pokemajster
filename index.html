@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vysloboď pokémonov - Edu PWA v8.60</title>
+    <title>Vysloboď pokémonov - Edu PWA v8.61</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#d32f2f">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -24,7 +24,66 @@ FIREBASE DOČASNE VYPNUTÝ - ponechané pre budúce použitie
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   window.cloudDB = { db, doc, setDoc, getDoc, onSnapshot };
+  window.initCloudSync = initCloudSync();
+  
+async function initCloudSync(){
+    if(!window.cloudDB) return;
+    const {db, doc, onSnapshot, getDoc} = window.cloudDB;
+    const ref = doc(db,'shared','allUsers');
+    try{
+        const snap = await getDoc(ref);
+        if(snap.exists()){
+            const data = snap.data();
+            if(data.users){
+                users = data.users;
+                localStorage.setItem('pokemonUsers', JSON.stringify(users));
+            }
+        }
+    }catch(e){ console.error('Cloud init error',e); }
+    onSnapshot(ref, (docSnap)=>{
+        if(docSnap.exists()){
+            const data = docSnap.data();
+            if(data.users){
+                users = data.users;
+                localStorage.setItem('pokemonUsers', JSON.stringify(users));
+                if(typeof renderAll === 'function') renderAll();
+                if(typeof updateUI === 'function') updateUI();
+            }
+        }
+    });
+}
+
   console.log("Firebase pripravený");
+  setTimeout(()=>{ if(window.initCloudSync) window.initCloudSync(); }, 500);
+
+async function initCloudSync(){
+    if(!window.cloudDB) return;
+    const {db, doc, onSnapshot, getDoc} = window.cloudDB;
+    const ref = doc(db,'shared','allUsers');
+    try{
+        const snap = await getDoc(ref);
+        if(snap.exists()){
+            const data = snap.data();
+            if(data.users){
+                users = data.users;
+                localStorage.setItem('pokemonUsers', JSON.stringify(users));
+            }
+        }
+    }catch(e){ console.error('Cloud init error',e); }
+    onSnapshot(ref, (docSnap)=>{
+        if(docSnap.exists()){
+            const data = docSnap.data();
+            if(data.users){
+                users = data.users;
+                localStorage.setItem('pokemonUsers', JSON.stringify(users));
+                if(typeof renderAll === 'function') renderAll();
+                if(typeof updateUI === 'function') updateUI();
+            }
+        }
+    });
+}
+
+window.initCloudSync = initCloudSync;
 </script>
 
 
@@ -54,7 +113,7 @@ FIREBASE DOČASNE VYPNUTÝ - ponechané pre budúce použitie
     </script>
     <script>
         // --- KONŠTANTY A STAV ---
-        const APP_VERSION = "8.60";
+        const APP_VERSION = "8.61";
         const GEN_TOTALS = { 1: 151, 2: 100, 3: 135, 4: 107, 5: 156, 6: 72, 7: 88, 8: 96, 9: 120 };
         const GEN_NAMES = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar', 9: 'Paldea' };
 
