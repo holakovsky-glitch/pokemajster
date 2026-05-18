@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vysloboď pokémonov - Edu PWA v8.61</title>
+    <title>Vysloboď pokémonov - Edu PWA v8.62</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#d32f2f">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -20,70 +20,11 @@ FIREBASE DOČASNE VYPNUTÝ - ponechané pre budúce použitie
       storageBucket: "pokemonmajster-c1f6d.firebasestorage.app",
       messagingSenderId: "860913054796",
       appId: "1:860913054796:web:71015716c812b4e5d1f0e9"
-    };
+  };
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   window.cloudDB = { db, doc, setDoc, getDoc, onSnapshot };
-  window.initCloudSync = initCloudSync();
-  
-async function initCloudSync(){
-    if(!window.cloudDB) return;
-    const {db, doc, onSnapshot, getDoc} = window.cloudDB;
-    const ref = doc(db,'shared','allUsers');
-    try{
-        const snap = await getDoc(ref);
-        if(snap.exists()){
-            const data = snap.data();
-            if(data.users){
-                users = data.users;
-                localStorage.setItem('pokemonUsers', JSON.stringify(users));
-            }
-        }
-    }catch(e){ console.error('Cloud init error',e); }
-    onSnapshot(ref, (docSnap)=>{
-        if(docSnap.exists()){
-            const data = docSnap.data();
-            if(data.users){
-                users = data.users;
-                localStorage.setItem('pokemonUsers', JSON.stringify(users));
-                if(typeof renderAll === 'function') renderAll();
-                if(typeof updateUI === 'function') updateUI();
-            }
-        }
-    });
-}
-
   console.log("Firebase pripravený");
-  setTimeout(()=>{ if(window.initCloudSync) window.initCloudSync(); }, 500);
-
-async function initCloudSync(){
-    if(!window.cloudDB) return;
-    const {db, doc, onSnapshot, getDoc} = window.cloudDB;
-    const ref = doc(db,'shared','allUsers');
-    try{
-        const snap = await getDoc(ref);
-        if(snap.exists()){
-            const data = snap.data();
-            if(data.users){
-                users = data.users;
-                localStorage.setItem('pokemonUsers', JSON.stringify(users));
-            }
-        }
-    }catch(e){ console.error('Cloud init error',e); }
-    onSnapshot(ref, (docSnap)=>{
-        if(docSnap.exists()){
-            const data = docSnap.data();
-            if(data.users){
-                users = data.users;
-                localStorage.setItem('pokemonUsers', JSON.stringify(users));
-                if(typeof renderAll === 'function') renderAll();
-                if(typeof updateUI === 'function') updateUI();
-            }
-        }
-    });
-}
-
-window.initCloudSync = initCloudSync;
 </script>
 
 
@@ -113,7 +54,7 @@ window.initCloudSync = initCloudSync;
     </script>
     <script>
         // --- KONŠTANTY A STAV ---
-        const APP_VERSION = "8.61";
+        const APP_VERSION = "8.62";
         const GEN_TOTALS = { 1: 151, 2: 100, 3: 135, 4: 107, 5: 156, 6: 72, 7: 88, 8: 96, 9: 120 };
         const GEN_NAMES = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar', 9: 'Paldea' };
 
@@ -782,5 +723,55 @@ speak(praiseWithName, 'sk-SK', () => {
     <div id="app"></div>
     <div id="modal" class="fixed inset-0 bg-blue-900/90 dark:bg-slate-950/90 backdrop-blur-xl z-[100] flex items-center justify-center hidden p-4"></div>
 <script>if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('./sw.js?v=' + APP_VERSION);});}</script>
+
+<script>
+async function cloudSave(){
+  if(!window.cloudDB || !window.currentUser) return;
+  try{
+    const {db, doc, setDoc} = window.cloudDB;
+    const userData = window.users.find(u=>u.name===window.currentUser);
+    if(userData) await setDoc(doc(db,'users',window.currentUser), userData);
+  }catch(e){ console.error('Cloud save',e); }
+}
+async function cloudLoad(){
+  if(!window.cloudDB || !window.currentUser) return;
+  try{
+    const {db, doc, getDoc, onSnapshot} = window.cloudDB;
+    const ref = doc(db,'users',window.currentUser);
+    const snap = await getDoc(ref);
+    if(snap.exists()){
+      const data = snap.data();
+      const idx = window.users.findIndex(u=>u.name===window.currentUser);
+      if(idx>=0) window.users[idx]=data; else window.users.push(data);
+      localStorage.setItem('pokemonUsers', JSON.stringify(window.users));
+      if(window.renderAll) window.renderAll();
+    }
+    onSnapshot(ref, (s)=>{
+      if(s.exists()){
+        const data = s.data();
+        const idx = window.users.findIndex(u=>u.name===window.currentUser);
+        if(idx>=0) window.users[idx]=data;
+        localStorage.setItem('pokemonUsers', JSON.stringify(window.users));
+        if(window.renderAll) window.renderAll();
+      }
+    });
+  }catch(e){ console.error('Cloud load',e); }
+}
+// wrap original saveUserData
+const _origSave = window.saveUserData;
+window.saveUserData = async function(){
+  if(_origSave) _origSave();
+  localStorage.setItem('pokemonUsers', JSON.stringify(window.users));
+  localStorage.setItem('pokemonCurrentUser', window.currentUser);
+  await cloudSave();
+};
+// after login, call cloudLoad
+document.addEventListener('DOMContentLoaded', ()=>{
+  const check = setInterval(()=>{
+    if(window.currentUser){ clearInterval(check); cloudLoad(); }
+  }, 500);
+});
+</script>
+
 </body>
 </html>
