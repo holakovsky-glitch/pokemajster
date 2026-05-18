@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vysloboď pokémonov - Edu PWA v8.58</title>
+    <title>Vysloboď pokémonov - Edu PWA v8.59</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#d32f2f">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -54,8 +54,8 @@ FIREBASE DOČASNE VYPNUTÝ - ponechané pre budúce použitie
         }
     </script>
     <script>
-        // --- KONŠTANTY A STAV - Pracovný názov indexu Rozdiely-v-kóde-aplikácie ---
-        const APP_VERSION = "8.58";
+        // --- KONŠTANTY A STAV ---
+        const APP_VERSION = "8.59";
         const GEN_TOTALS = { 1: 151, 2: 100, 3: 135, 4: 107, 5: 156, 6: 72, 7: 88, 8: 96, 9: 120 };
         const GEN_NAMES = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar', 9: 'Paldea' };
 
@@ -105,11 +105,12 @@ if (IS_UPDATE) {
             const data = window.POKEDEX_DATA || {};
             const EN = window.EN_POKEDEX || {};
             const SK = window.SK_POKEDEX || {};
+            const getGenById = (id) => { let cum=0; for(let g=1; g<=9; g++){ cum+=GEN_TOTALS[g]; if(id<=cum) return g } return 9 };
             // popisy už sú v gen súboroch
             return Object.values(data).map(p => ({
                 ...p,
                 numericId: Number(p.id),
-                gen: p.gen || 1,
+                gen: p.gen || getGenById(Number(p.id)),
                 descEn: EN[p.id] || p.descEn || "No English description.",
                 descSk: SK[p.id] || p.descSk || "Slovenský popis čoskoro pribudne.",
                 displayHeight: p.height ? (p.height / 10).toFixed(1) : "?",
@@ -175,22 +176,35 @@ if (IS_UPDATE) {
         const playCelebration = () => {
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                // fanfára - dlhšia a výraznejšia
+                // fanfára - hlasnejšia a slávnostnejšia
                 const notes = [
-                    {f: 523, t:0, d:0.3}, {f:659, t:0.3, d:0.3}, {f:784, t:0.6, d:0.4},
-                    {f:1046, t:1.1, d:0.5}
+                    {f: 523, t:0, d:0.25}, {f:659, t:0.25, d:0.25}, {f:784, t:0.5, d:0.3},
+                    {f:1046, t:0.85, d:0.4}, {f:1318, t:1.3, d:0.6}, {f:1046, t:1.95, d:0.5}
                 ];
                 notes.forEach(n => {
                     const o = ctx.createOscillator();
                     const g = ctx.createGain();
-                    o.type = 'triangle';
+                    o.type = 'sawtooth';
                     o.frequency.value = n.f;
                     g.gain.setValueAtTime(0, ctx.currentTime + n.t);
-                    g.gain.linearRampToValueAtTime(0.5, ctx.currentTime + n.t + 0.02);
+                    g.gain.linearRampToValueAtTime(0.9, ctx.currentTime + n.t + 0.02);
                     g.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + n.t + n.d);
                     o.connect(g).connect(ctx.destination);
                     o.start(ctx.currentTime + n.t);
                     o.stop(ctx.currentTime + n.t + n.d + 0.05);
+                });
+                // pridaný druhý hlas pre plnosť
+                notes.forEach(n => {
+                    const o2 = ctx.createOscillator();
+                    const g2 = ctx.createGain();
+                    o2.type = 'square';
+                    o2.frequency.value = n.f * 0.5;
+                    g2.gain.setValueAtTime(0, ctx.currentTime + n.t);
+                    g2.gain.linearRampToValueAtTime(0.4, ctx.currentTime + n.t + 0.02);
+                    g2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + n.t + n.d);
+                    o2.connect(g2).connect(ctx.destination);
+                    o2.start(ctx.currentTime + n.t);
+                    o2.stop(ctx.currentTime + n.t + n.d + 0.05);
                 });
             } catch(e) {}
         };
@@ -360,18 +374,38 @@ if (IS_UPDATE) {
                 // --- KONTROLA DOKONČENIA GENERÁCIE ---
                 const genCount = POKEMON_DATA.filter(p => p.gen === targetPokemon.gen && unlockedIds.includes(p.id)).length;
                 if (genCount === GEN_TOTALS[targetPokemon.gen]) {
-                    // 1) fanfára (1.6s)
+                    // 1) fanfára - hlasnejšia
                     playCelebration();
-                    window._showGenConfetti = true;
-                    // 2) pauza, potom otvor modal (aby sa zvuky neprekrývali)
+                    // 2) zobraz ohňostroj
+                    const modal = document.getElementById('modal'); modal.classList.remove('hidden');
+                    modal.innerHTML = `<div class="bg-slate-900 p-10 rounded-[3rem] max-w-lg w-[95%] text-center shadow-2xl border-4 border-yellow-400 relative animate-fade overflow-hidden">
+                        <div id="fireworks" style="position:absolute;inset:0;pointer-events:none;"></div>
+                        <div class="relative z-10">
+                            <div style="font-size:4rem;margin-bottom:1rem;">🎆</div>
+                            <h2 class="text-2xl font-black text-yellow-300 uppercase mb-4 tracking-tighter">Generácia ${targetPokemon.gen}</h2>
+                            <p class="text-white/80 text-sm">Priprav sa na oslavu...</p>
+                        </div>
+                    </div>`;
+                    // jednoduchá animácia ohňostroja
+                    const fw = document.getElementById('fireworks');
+                    for(let i=0;i<30;i++){ const s=document.createElement('div'); s.textContent='✨'; s.style.position='absolute'; s.style.left=Math.random()*100+'%'; s.style.top=Math.random()*100+'%'; s.style.fontSize=(12+Math.random()*24)+'px'; s.style.animation=`fw${i%3} ${2+Math.random()*2}s infinite`; fw.appendChild(s); }
+                    const style=document.createElement('style'); style.textContent='@keyframes fw0{0%{opacity:0;transform:scale(0)}50%{opacity:1;transform:scale(1.5)}100%{opacity:0}}@keyframes fw1{0%{opacity:0;transform:translateY(20px)}50%{opacity:1}100%{opacity:0;transform:translateY(-20px)}}@keyframes fw2{0%{opacity:0;transform:rotate(0)}100%{opacity:1;transform:rotate(360deg)}}'; document.head.appendChild(style);
+                    // 3) po fanfárach prehovor
                     setTimeout(() => {
-                        openDetailModal(targetPokemon, true);
-                        // 3) po skončení úvodnej reči v modale pridaj pochvalu za generáciu
-                        setTimeout(() => {
-                            const praise = PRAISE_WORDS[Math.floor(Math.random() * PRAISE_WORDS.length)];
-                            speak(`${praise}! ${currentUserName}, vyslobodil si všetkých pokémonov z generácie ${GEN_NAMES[targetPokemon.gen]}!`, "sk-SK");
-                        }, 3800);
-                    }, 1700);
+                        const praise = PRAISE_WORDS[Math.floor(Math.random() * PRAISE_WORDS.length)];
+                        speak(`${praise}! ${currentUserName}, vyslobodil si všetkých pokémonov z generácie ${GEN_NAMES[targetPokemon.gen]}!`, "sk-SK", () => {
+                            // 4) zobraz finálne okno
+                            modal.innerHTML = `<div class="bg-white dark:bg-slate-800 p-10 rounded-[3rem] max-w-md w-[95%] text-center shadow-2xl border-4 border-yellow-400 animate-fade">
+                                <div style="font-size:4rem;margin-bottom:1rem;">🏆</div>
+                                <h2 class="text-2xl font-black text-blue-900 dark:text-yellow-300 uppercase mb-2 tracking-tighter">Generácia ${targetPokemon.gen} je vyslobodená!</h2>
+                                <p class="text-gray-600 dark:text-gray-300 mb-8">${GEN_NAMES[targetPokemon.gen]}</p>
+                                <div class="space-y-3">
+                                    <button onclick="document.getElementById('modal').classList.add('hidden'); switchScreen('gallery', ${targetPokemon.gen})" class="w-full bg-yellow-400 text-blue-900 py-4 rounded-2xl font-black uppercase shadow-lg">Prejsť do Galérie</button>
+                                    <button onclick="confirmExit(true)" class="w-full bg-blue-900 text-white py-4 rounded-2xl font-black uppercase shadow-lg">Skončiť</button>
+                                </div>
+                            </div>`;
+                        });
+                    }, 2200);
                 } else {
                     openDetailModal(targetPokemon, true);
                 }
@@ -489,7 +523,8 @@ if (IS_UPDATE) {
             window._showGenConfetti = false;
             if (isSuccess) {
                 const praise = PRAISE_WORDS[Math.floor(Math.random()*PRAISE_WORDS.length)];
-speak(praise + ", " + currentUserName + ", vyslobodil si pokémona", 'sk-SK', () => {
+const praiseWithName = praise === 'vynikajúco' ? `${praise}, ${currentUserName}, vyslobodil si pokémona` : `${praise}, vyslobodil si pokémona`;
+speak(praiseWithName, 'sk-SK', () => {
                     if (parental.skEnLock) {
                         speak(pokemon.name + ". " + pokemon.descEn, 'en-US', () => {
                             playedAudio[pokemon.id] = true;
