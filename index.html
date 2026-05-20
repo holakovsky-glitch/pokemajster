@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vysloboď pokémonov - Edu PWA v8.71</title>
+    <title>Vysloboď pokémonov - Edu PWA v8.72</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#d32f2f">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -55,7 +55,7 @@
     </script>
     <script>
         // --- KONŠTANTY A STAV ---
-        const APP_VERSION = "8.71-cloud-first";
+        const APP_VERSION = "8.72-fix-exists";
         const GEN_TOTALS = { 1: 151, 2: 100, 3: 135, 4: 107, 5: 156, 6: 72, 7: 88, 8: 96, 9: 120 };
         const GEN_NAMES = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar', 9: 'Paldea' };
 
@@ -204,7 +204,7 @@ if (IS_UPDATE || !STORED_VERSION) {
                     const snap = await window.cloudDB.getDoc(ref);
                     let cloudIds = [];
                     let cloudTime = 0;
-                    if (snap.exists()) {
+                    if (snap && (typeof snap.exists === "function" ? snap.exists() : snap.exists)) {
                         const data = snap.data();
                         cloudIds = data.unlockedIds || [];
                         cloudTime = data.updatedAt || 0;
@@ -239,7 +239,7 @@ if (IS_UPDATE || !STORED_VERSION) {
     if (navigator.onLine && window.cloudDB) {
         try {
             const snap = await window.cloudDB.getDoc(window.cloudDB.doc(window.cloudDB.db, "users", userName));
-            if (snap.exists()) {
+            if (snap && (typeof snap.exists === "function" ? snap.exists() : snap.exists)) {
                 const cloud = snap.data();
                 unlockedIds = cloud.unlockedIds || [];
                 stats = { unlockedToday: 0, lastDate: new Date().toLocaleDateString(), completedWords: [], taskCounter: 0, ...(cloud.stats || {}) };
