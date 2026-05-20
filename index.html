@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vysloboď pokémonov - Edu PWA v8.67-debug</title>
+    <title>Vysloboď pokémonov - Edu PWA v8.68-fix</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#d32f2f">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -56,7 +56,7 @@
     </script>
     <script>
         // --- KONŠTANTY A STAV ---
-        const APP_VERSION = "8.67-debug";
+        const APP_VERSION = "8.68-fix";
         const GEN_TOTALS = { 1: 151, 2: 100, 3: 135, 4: 107, 5: 156, 6: 72, 7: 88, 8: 96, 9: 120 };
         const GEN_NAMES = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar', 9: 'Paldea' };
 
@@ -236,32 +236,12 @@ if (IS_UPDATE || !STORED_VERSION) {
             if (snap.exists()) {
                 const cloud = snap.data();
                 unlockedIds = cloud.unlockedIds || [];
-                // realtime listener - len čítanie, žiadny spätný zápis
-                if (window.cloudUnsub) window.cloudUnsub();
-                window.lastCloudUpdate = Date.now();
-                window.cloudUnsub = window.cloudDB.onSnapshot(window.cloudDB.doc(window.cloudDB.db, "users", userName), (docSnap) => {
-                    if (docSnap.exists() && currentUserName === userName) {
-                        const data = docSnap.data();
-                        const remoteIds = data.unlockedIds || [];
-                        const remoteTime = data.updatedAt || 0;
-                        window.lastCloudUpdate = remoteTime;
-                        window.cloudCount = remoteIds.length;
-                        // prijmi len ak je cloud novší o viac ako 2s a líši sa
-                        if (remoteTime > (window.lastLocalSave||0) + 2000 && remoteIds.length !== unlockedIds.length) {
-                            unlockedIds = [...remoteIds];
-                            stats = { ...stats, ...(data.stats||{}) };
-                            const profiles = getAllLocalProfiles();
-                            if (profiles[userName]) {
-                                profiles[userName].unlockedIds = [...remoteIds];
-                                profiles[userName].stats = {...stats};
-                                localStorage.setItem('poke_edu_profiles', JSON.stringify(profiles));
-                            }
-                            updateAllProfilesList();
-                            render();
-                        }
-                        updateDebugPanel();
-                    }
-                });
+                stats = cloud.stats || stats;
+                parental = { ...parental, ...(cloud.parental||{}) };
+                currentUserPin = cloud.userPin || currentUserPin;
+                // dočasne vypnutý realtime - spôsoboval zaseknutie
+                window.lastCloudUpdate = cloud.updatedAt || Date.now();
+                window.cloudCount = unlockedIds.length;
                 stats = { unlockedToday: 0, lastDate: new Date().toLocaleDateString(), completedWords: [], taskCounter: 0, ...(cloud.stats || {}) };
                 parental = { ...globalParental, ...(cloud.parental || {}) };
                 currentUserPin = cloud.userPin || null;
@@ -481,7 +461,7 @@ if (IS_UPDATE || !STORED_VERSION) {
             currentUserName = name;
             document.getElementById('modal').classList.add('hidden');
             isLoading = true; render();
-            await loadUserData(name);
+            try { await loadUserData(name); } catch(e){ console.error(e); }
             // prepíš PIN do profilu
             const profiles = getAllLocalProfiles();
             if (!profiles[name]) profiles[name] = {};
@@ -516,7 +496,7 @@ if (IS_UPDATE || !STORED_VERSION) {
                 currentUserName = name;
                 document.getElementById('modal').classList.add('hidden');
                 isLoading = true; render();
-                await loadUserData(name);
+                try { await loadUserData(name); } catch(e){ console.error(e); }
                 activeScreen = 'game'; nextTask();
                 isLoading = false; hasUnsavedChanges = false; render();
                 setTimeout(() => speak(`Vitaj späť ${name}.`, "sk-SK"), 600);
