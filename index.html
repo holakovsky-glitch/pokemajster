@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vysloboď pokémonov - Edu PWA v8.70</title>
+    <title>Vysloboď pokémonov - Edu PWA v8.71</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#d32f2f">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -55,7 +55,7 @@
     </script>
     <script>
         // --- KONŠTANTY A STAV ---
-        const APP_VERSION = "8.70-clean";
+        const APP_VERSION = "8.71-cloud-first";
         const GEN_TOTALS = { 1: 151, 2: 100, 3: 135, 4: 107, 5: 156, 6: 72, 7: 88, 8: 96, 9: 120 };
         const GEN_NAMES = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar', 9: 'Paldea' };
 
@@ -187,23 +187,42 @@ if (IS_UPDATE || !STORED_VERSION) {
 
         const getAllLocalProfiles = () => { try { return JSON.parse(localStorage.getItem('poke_edu_profiles')) || {}; } catch (e) { return {}; } };
         
-        function saveProgress(specificName = null) {
+        async function saveProgress(specificName = null) {
             const userName = specificName || currentUserName;
             if (!userName) return;
             const profiles = getAllLocalProfiles();
             const existing = profiles[userName] || {};
+            // NEČÍTAJ z localStorage ak je prázdne - čakaj na cloud
             if (unlockedIds.length === 0 && existing.unlockedIds && existing.unlockedIds.length > 0) { unlockedIds = existing.unlockedIds; }
             profiles[userName] = { unlockedIds, parental, stats, userPin: existing.userPin || currentUserPin || null, lastUpdate: new Date() };
             localStorage.setItem('poke_edu_profiles', JSON.stringify(profiles));
             updateAllProfilesList();
-            // CLOUD SAVE ZAPNUTÝ
+            // CLOUD SAVE - cloud-first read-modify-write
             if (navigator.onLine && window.cloudDB && userName) {
                 try {
-                    window.cloudDB.setDoc(
-                        window.cloudDB.doc(window.cloudDB.db, "users", userName),
-                        { unlockedIds, stats, parental, userPin: currentUserPin, version: APP_VERSION, updatedAt: Date.now() },
+                    const ref = window.cloudDB.doc(window.cloudDB.db, "users", userName);
+                    const snap = await window.cloudDB.getDoc(ref);
+                    let cloudIds = [];
+                    let cloudTime = 0;
+                    if (snap.exists()) {
+                        const data = snap.data();
+                        cloudIds = data.unlockedIds || [];
+                        cloudTime = data.updatedAt || 0;
+                    }
+                    // vezmi maximum - nikdy neprepisuj vyššie číslo nižším
+                    const mergedIds = Array.from(new Set([...cloudIds, ...unlockedIds]));
+                    // ak je cloud novší a má viac, použi cloud
+                    if (cloudIds.length > unlockedIds.length && cloudTime > (window.lastLocalSave||0)) {
+                        unlockedIds = [...cloudIds];
+                    } else {
+                        unlockedIds = mergedIds;
+                    }
+                    const now = Date.now();
+                    await window.cloudDB.setDoc(ref,
+                        { unlockedIds, stats, parental, userPin: currentUserPin, version: APP_VERSION, updatedAt: now },
                         { merge: true }
                     );
+                    window.lastLocalSave = now;
                 } catch(e) { console.log('Cloud save chyba', e); }
             }
             hasUnsavedChanges = false;
@@ -488,7 +507,7 @@ if (IS_UPDATE || !STORED_VERSION) {
             m.innerHTML = `<div class="bg-white dark:bg-slate-800 p-10 rounded-[3rem] max-w-sm w-full text-center shadow-2xl border-4 border-blue-200 dark:border-blue-900 animate-fade"><h2 class="text-2xl font-black text-blue-900 dark:text-blue-300 uppercase mb-6 tracking-tighter font-black">Ukončiť hru?</h2><p class="text-sm text-gray-600 dark:text-gray-300 mb-4">Zistili sa neuložené zmeny.</p><div class="space-y-3"><button onclick="confirmExit(true)" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase shadow-md active:scale-95 transition-all font-black">Uložiť a skončiť</button><button onclick="confirmExit(false)" class="w-full bg-red-100 text-red-600 py-4 rounded-2xl font-black uppercase shadow-sm active:scale-95 transition-all font-black">Skončiť bez uloženia</button><button onclick="document.getElementById('modal').classList.add('hidden')" class="w-full bg-gray-100 dark:bg-slate-700 text-gray-400 py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest font-black">Zrušiť</button></div></div>`;
         };
 
-        window.confirmExit = (save) => { if (save) saveProgress(); currentUserName = null; currentTask = null; activeScreen = 'login'; updateAllProfilesList(); document.getElementById('modal').classList.add('hidden'); applyVisualTheme(); setTimeout(showUserPinInParental, 100); render(); };
+        window.confirmExit = async (save) => { if (save) await saveProgress(); currentUserName = null; currentTask = null; activeScreen = 'login'; updateAllProfilesList(); document.getElementById('modal').classList.add('hidden'); applyVisualTheme(); setTimeout(showUserPinInParental, 100); render(); };
         window.switchScreen = (s, g = null) => { activeScreen = s; selectedGen = g; updateAllProfilesList(); render(); };
 
         window.showHelp = () => {
