@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vysloboď pokémonov - Edu PWA v8.65</title>
+    <title>Vysloboď pokémonov - Edu PWA v8.66</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#d32f2f">
     <link rel="apple-touch-icon" href="icon-192.png">
@@ -23,7 +23,8 @@
     db,
     doc: (db, col, id) => db.collection(col).doc(id),
     setDoc: (ref, data, opts) => ref.set(data, opts || {}),
-    getDoc: (ref) => ref.get()
+    getDoc: (ref) => ref.get(),
+    onSnapshot: (ref, cb) => ref.onSnapshot(cb)
   };
   console.log("Firebase pripravený");
 </script>
@@ -55,7 +56,7 @@
     </script>
     <script>
         // --- KONŠTANTY A STAV ---
-        const APP_VERSION = "8.65";
+        const APP_VERSION = "8.66";
         const GEN_TOTALS = { 1: 151, 2: 100, 3: 135, 4: 107, 5: 156, 6: 72, 7: 88, 8: 96, 9: 120 };
         const GEN_NAMES = { 1: 'Kanto', 2: 'Johto', 3: 'Hoenn', 4: 'Sinnoh', 5: 'Unova', 6: 'Kalos', 7: 'Alola', 8: 'Galar', 9: 'Paldea' };
 
@@ -196,32 +197,24 @@ if (IS_UPDATE || !STORED_VERSION) {
             profiles[userName] = { unlockedIds, parental, stats, userPin: existing.userPin || currentUserPin || null, lastUpdate: new Date() };
             localStorage.setItem('poke_edu_profiles', JSON.stringify(profiles));
             updateAllProfilesList();
-            // CLOUD SAVE ZAPNUTÝ s ochranou proti prepisu nižšou hodnotou
+            // CLOUD SAVE - jednoduchý last-write-wins, s ochranou proti prázdnemu prepisu
             if (navigator.onLine && window.cloudDB && userName) {
                 try {
                     const ref = window.cloudDB.doc(window.cloudDB.db, "users", userName);
-                    let cloudIds = [];
-                    if (!force) {
+                    // Neukladaj prázdne pole ak nie je force (ochrana pri prvom načítaní)
+                    if (!force && unlockedIds.length === 0) {
                         const snap = await window.cloudDB.getDoc(ref);
-                        if (snap.exists()) {
-                            const data = snap.data();
-                            cloudIds = data.unlockedIds || [];
-                            // Ak je cloud novší a má viac pokémonov, neprepisuj nižšou hodnotou
-                            if (cloudIds.length > unlockedIds.length) {
-                                unlockedIds = [...cloudIds];
-                                profiles[userName].unlockedIds = [...cloudIds];
-                                localStorage.setItem('poke_edu_profiles', JSON.stringify(profiles));
-                            }
+                        if (snap.exists() && (snap.data().unlockedIds||[]).length > 0) {
+                            console.log('Preskakujem zápis prázdneho stavu');
+                            hasUnsavedChanges = false;
+                            return;
                         }
                     }
-                    // Merge - zjednotenie pre istotu, pri force berieme lokálne
-                    const mergedIds = force ? [...unlockedIds] : Array.from(new Set([...cloudIds, ...unlockedIds]));
                     await window.cloudDB.setDoc(
                         ref,
-                        { unlockedIds: mergedIds, stats, parental, userPin: currentUserPin, version: APP_VERSION, updatedAt: Date.now() },
+                        { unlockedIds, stats, parental, userPin: currentUserPin, version: APP_VERSION, updatedAt: Date.now() },
                         { merge: true }
                     );
-                    unlockedIds = mergedIds;
                 } catch(e) { console.log('Cloud save chyba', e); }
             }
             hasUnsavedChanges = false;
@@ -241,6 +234,20 @@ if (IS_UPDATE || !STORED_VERSION) {
             if (snap.exists()) {
                 const cloud = snap.data();
                 unlockedIds = cloud.unlockedIds || [];
+                // realtime listener pre synchronizáciu medzi zariadeniami
+                if (window.cloudUnsub) window.cloudUnsub();
+                window.cloudUnsub = window.cloudDB.onSnapshot(window.cloudDB.doc(window.cloudDB.db, "users", userName), (docSnap) => {
+                    if (docSnap.exists() && currentUserName === userName) {
+                        const data = docSnap.data();
+                        const remoteIds = data.unlockedIds || [];
+                        if (remoteIds.length !== unlockedIds.length) {
+                            unlockedIds = [...remoteIds];
+                            stats = { ...stats, ...(data.stats||{}) };
+                            saveProgress(userName); // update local
+                            render();
+                        }
+                    }
+                });
                 stats = { unlockedToday: 0, lastDate: new Date().toLocaleDateString(), completedWords: [], taskCounter: 0, ...(cloud.stats || {}) };
                 parental = { ...globalParental, ...(cloud.parental || {}) };
                 currentUserPin = cloud.userPin || null;
@@ -515,19 +522,35 @@ if (IS_UPDATE || !STORED_VERSION) {
         window.showGenerationComplete = (gen) => {
             const m = document.getElementById('modal'); m.classList.remove('hidden');
             const genName = GEN_NAMES[gen] || gen;
-            // Fanfáry - použijeme Web Audio API pre hlasný tón
+            // Vytvor canvas s ohňostrojom
+            m.innerHTML = `<div class="fixed inset-0 bg-black flex items-center justify-center z-[200] overflow-hidden"><canvas id="fw" class="absolute inset-0 w-full h-full"></canvas><div class="relative z-10 text-center"><h1 class="text-6xl md:text-8xl font-black text-yellow-300 uppercase animate-pulse" style="text-shadow:0 0 30px #fde047, 0 0 60px #facc15">Gratulujem!</h1><p class="text-white text-2xl mt-6 font-bold">Všetci z ${genName} sú voľní</p></div></div>`;
+            // Jednoduchý ohňostroj
+            const canvas = document.getElementById('fw'); const ctx = canvas.getContext('2d'); canvas.width = innerWidth; canvas.height = innerHeight;
+            let particles=[]; function boom(x,y){ for(let i=0;i<80;i++) particles.push({x,y,vx:(Math.random()-0.5)*8,vy:(Math.random()-0.5)*8,life:60,color:`hsl(${Math.random()*60+40},100%,60%)`}); }
+            setInterval(()=>boom(Math.random()*canvas.width, Math.random()*canvas.height*0.6), 400);
+            function anim(){ ctx.fillStyle='rgba(0,0,0,0.2)'; ctx.fillRect(0,0,canvas.width,canvas.height); particles=particles.filter(p=>p.life>0); particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.05;p.life--; ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,3,0,7); ctx.fill();}); requestAnimationFrame(anim); } anim();
+            // Fanfára - hlasnejšia, viac tónov
             try {
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                const o = ctx.createOscillator(); const g = ctx.createGain();
-                o.type = 'square'; o.frequency.setValueAtTime(800, ctx.currentTime);
-                o.connect(g); g.connect(ctx.destination); g.gain.setValueAtTime(0.3, ctx.currentTime);
-                o.start(); setTimeout(()=>{o.stop(); ctx.close();}, 2000);
+                const ctxA = new (window.AudioContext||window.webkitAudioContext)();
+                const playTone = (f,d,t)=>{ const o=ctxA.createOscillator(), g=ctxA.createGain(); o.frequency.value=f; o.type='triangle'; g.gain.setValueAtTime(0.4, t); g.gain.exponentialRampToValueAtTime(0.01, t+d); o.connect(g); g.connect(ctxA.destination); o.start(t); o.stop(t+d); };
+                const now=ctxA.currentTime; [523,659,784,1046].forEach((f,i)=>playTone(f,0.4,now+i*0.25));
             } catch(e){}
-            m.innerHTML = `<div class="fixed inset-0 bg-black/90 flex items-center justify-center z-[200]"><div class="text-center animate-fade"><div class="text-8xl mb-6 animate-pulse">🎆</div><h1 class="text-5xl font-black text-yellow-400 uppercase mb-4" style="text-shadow:0 0 20px #facc15">Gratulujem!</h1><p class="text-white text-xl font-bold">Vyslobodil si všetkých pokémonov z ${genName}</p></div></div>`;
-            setTimeout(()=>{ m.classList.add('hidden'); speak(`Gratulujem ti ${currentUserName}, vyslobodil si všetkých pokémonov z generácie ${genName}`, 'sk-SK'); }, 2500);
+            // Po fanfáre hlas
+            setTimeout(()=>{
+                const utter = new SpeechSynthesisUtterance(`Gratulujem ${currentUserName}, oslobodil si všetkých pokémonov z generácie ${genName}`);
+                utter.lang='sk-SK'; utter.rate=0.9; utter.onend=()=>setTimeout(()=>{ m.classList.add('hidden'); nextTask(); }, 800);
+                speechSynthesis.speak(utter);
+            }, 2200);
         };
-        window.confirmExit = (save) => { if (save) saveProgress(); currentUserName = null; currentTask = null; activeScreen = 'login'; updateAllProfilesList(); document.getElementById('modal').classList.add('hidden'); applyVisualTheme(); setTimeout(showUserPinInParental, 100); render(); };
-        window.switchScreen = (s, g = null) => { activeScreen = s; selectedGen = g; updateAllProfilesList(); render(); };
+        window.confirmExit = async (save) => { if (save) await saveProgress(); currentUserName = null; currentTask = null; activeScreen = 'login'; updateAllProfilesList(); document.getElementById('modal').classList.add('hidden'); applyVisualTheme(); setTimeout(showUserPinInParental, 100); render(); };
+        window.switchScreen = (s, g = null) => { 
+            if (activeScreen === 'parental-settings' && hasUnsavedChanges && editingProfileName) {
+                const m = document.getElementById('modal'); m.classList.remove('hidden');
+                m.innerHTML = `<div class="bg-white p-8 rounded-3xl text-center"><h2 class="font-black mb-4">Uložiť zmeny?</h2><button onclick="finalizeParentalSave(true); switchScreen('${s}', ${g})" class="bg-green-600 text-white px-4 py-2 rounded-xl mr-2">Uložiť</button><button onclick="hasUnsavedChanges=false; finalizeParentalSave(false); switchScreen('${s}', ${g})" class="bg-gray-300 px-4 py-2 rounded-xl">Zahodiť</button></div>`;
+                return;
+            }
+            activeScreen = s; selectedGen = g; updateAllProfilesList(); render(); 
+        };
         window.promptPinChange = () => {
             const m = document.getElementById('modal'); m.classList.remove('hidden');
             m.innerHTML = `<div class="bg-white dark:bg-slate-800 p-8 rounded-[3rem] max-w-sm w-full text-center shadow-2xl border-4 border-gray-200 animate-fade"><h2 class="text-xl font-black mb-4 uppercase">Zmeniť PIN</h2><input id="oldPin" type="password" inputmode="numeric" maxlength="4" placeholder="Starý PIN" class="w-full text-center text-2xl p-3 mb-3 rounded-xl border-2"><input id="newPinChange" type="password" inputmode="numeric" maxlength="4" placeholder="Nový PIN" class="w-full text-center text-2xl p-3 mb-4 rounded-xl border-2"><button onclick="confirmPinChange()" class="w-full bg-blue-600 text-white py-3 rounded-xl font-black uppercase">Potvrdiť</button><button onclick="document.getElementById('modal').classList.add('hidden')" class="w-full mt-2 text-xs text-gray-400 uppercase">Zrušiť</button></div>`;
@@ -687,7 +710,7 @@ if (IS_UPDATE || !STORED_VERSION) {
                 if (!currentTask) { window.nextTask(); root.innerHTML = `<div class="min-h-screen flex items-center justify-center bg-blue-900 font-black"><p class="text-white animate-pulse font-black">Generujem úlohu...</p></div>`; return; }
                 if (currentTask.limitReached) { root.innerHTML = `<div class="min-h-screen bg-blue-900 flex items-center justify-center p-6 text-center font-black"><div class="bg-white p-12 rounded-[4rem] max-w-md shadow-2xl border-4 border-red-400 animate-fade font-black"><div class="text-7xl mb-6 font-black">😴</div><h2 class="text-3xl font-black text-blue-900 uppercase mb-4 tracking-tighter leading-tight font-black">Kredity vyčerpané</h2><p class="text-gray-600 mb-6 font-medium">Na dnes si vyčerpal kredity. Môžeš si však prezerať galériu.</p><div class="space-y-3"><button onclick="switchScreen('gallery')" class="w-full bg-yellow-400 text-blue-900 py-5 rounded-3xl font-black uppercase shadow-xl">Otvoriť galériu</button><button onclick="confirmExit(true)" class="w-full bg-blue-900 text-white py-4 rounded-3xl font-black uppercase shadow-lg">Zavrieť a uložiť</button></div></div></div>`; return; }
                 const left = Math.max(0, parental.dailyLimit - stats.unlockedToday);
-                root.innerHTML = `<div class="min-h-screen bg-blue-50 dark:bg-slate-950 flex flex-col items-center transition-colors font-black"><header class="w-full bg-white dark:bg-slate-900 px-6 py-4 shadow-md flex justify-between items-center sticky top-0 z-40 border-b-4 border-blue-100 dark:border-slate-800 transition-colors font-black"><div class="flex items-center gap-3 font-black"><div class="w-32 h-6 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-gray-200 dark:border-slate-700 shadow-inner font-black"><div class="h-full rounded-full bg-green-500 transition-all duration-500 font-black" style="width: ${(left/parental.dailyLimit)*100}%"></div></div><span class="text-[11px] font-black text-gray-600 dark:text-gray-300 uppercase font-black">Kredity: ${left}</span></div><div class="flex gap-2 font-black"><button onclick="promptPinChange()" class="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 px-3 py-2 rounded-2xl font-black uppercase text-[9px] active:scale-95 font-black">PIN</button><button onclick="showExitConfirm()" class="bg-blue-100 dark:bg-slate-800 text-blue-700 dark:text-blue-300 px-4 py-2 rounded-2xl font-black uppercase text-[10px] active:scale-95 font-black">Skončiť</button><button onclick="switchScreen('gallery')" class="bg-yellow-400 text-blue-900 px-4 py-2 rounded-2xl font-black uppercase text-[10px] active:scale-95 font-black">Galéria (${unlockedIds.length})</button></div></header><main class="flex-grow flex flex-col items-center justify-center w-full max-w-3xl p-4 font-black"><div class="bg-white dark:bg-slate-900 p-8 sm:p-20 rounded-[4rem] shadow-2xl w-full text-center border-b-8 border-gray-100 dark:border-slate-800 relative animate-fade transition-colors font-black">${currentTask.type === 'word' ? renderWordTask() : renderMathTask()}</div></main></div>`;
+                root.innerHTML = `<div class="min-h-screen bg-blue-50 dark:bg-slate-950 flex flex-col items-center transition-colors font-black"><header class="w-full bg-white dark:bg-slate-900 px-6 py-4 shadow-md flex justify-between items-center sticky top-0 z-40 border-b-4 border-blue-100 dark:border-slate-800 transition-colors font-black"><div class="flex items-center gap-3 font-black"><div class="w-32 h-6 bg-gray-100 dark:bg-slate-800 rounded-full overflow-hidden p-0.5 border border-gray-200 dark:border-slate-700 shadow-inner font-black"><div class="h-full rounded-full bg-green-500 transition-all duration-500 font-black" style="width: ${(left/parental.dailyLimit)*100}%"></div></div><span class="text-[11px] font-black text-gray-600 dark:text-gray-300 uppercase font-black">Kredity: ${left}</span></div><div class="flex gap-2 font-black"><button onclick="promptPinChange()" class="bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300 px-3 py-2 rounded-2xl font-black uppercase text-[9px] active:scale-95 font-black">Zmena PIN</button><button onclick="showExitConfirm()" class="bg-blue-100 dark:bg-slate-800 text-blue-700 dark:text-blue-300 px-4 py-2 rounded-2xl font-black uppercase text-[10px] active:scale-95 font-black">Skončiť</button><button onclick="switchScreen('gallery')" class="bg-yellow-400 text-blue-900 px-4 py-2 rounded-2xl font-black uppercase text-[10px] active:scale-95 font-black">Galéria (${unlockedIds.length})</button></div></header><main class="flex-grow flex flex-col items-center justify-center w-full max-w-3xl p-4 font-black"><div class="bg-white dark:bg-slate-900 p-8 sm:p-20 rounded-[4rem] shadow-2xl w-full text-center border-b-8 border-gray-100 dark:border-slate-800 relative animate-fade transition-colors font-black">${currentTask.type === 'word' ? renderWordTask() : renderMathTask()}</div></main></div>`;
             } else if (activeScreen === 'gallery') {
                 root.innerHTML = `<div class="min-h-screen bg-gray-100 dark:bg-slate-950 flex flex-col transition-colors font-black"><header class="bg-white dark:bg-slate-900 p-6 shadow-md flex items-center justify-between sticky top-0 z-20 border-b-4 border-yellow-400 transition-colors font-black"><button onclick="switchScreen('game')" class="bg-blue-900 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase shadow-md active:scale-95">← Späť</button><h2 class="text-xl font-black text-blue-900 dark:text-blue-300 uppercase tracking-tighter">Generácie</h2><button onclick="showExitConfirm()" class="bg-red-100 text-red-600 px-4 py-2 rounded-2xl font-black text-xs uppercase">Skončiť</button></header><div class="p-8 grid grid-cols-2 sm:grid-cols-3 gap-6 max-w-4xl mx-auto w-full pb-20 font-black">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(g => { const count = POKEMON_DATA.filter(p => p.gen == g && unlockedIds.includes(p.id)).length, open = count > 0; return `<button onclick="${open ? `switchScreen('gallery-gen', ${g})` : ''}" class="bg-white dark:bg-slate-900 p-8 rounded-[3rem] shadow-lg flex flex-col items-center border-4 border-transparent ${open ? 'hover:border-yellow-400 active:scale-95 shadow-xl transition-all font-black' : 'opacity-40 grayscale'} font-black"><div class="w-20 h-20 mb-4 flex items-center justify-center font-black"><svg viewBox="0 0 100 100" class="w-full h-full" style="display: block;"><circle cx="50" cy="50" r="48" fill="#333" /><circle cx="50" cy="50" r="44" fill="white" /><path d="M50,50 m-44,0 a44,44 0 0,1 88,0 z" fill="${open ? '#ef4444' : '#ccc'}" /><rect x="6" y="48" width="88" height="4" fill="#333" /><circle cx="50" cy="50" r="18" fill="#333" /><circle cx="50" cy="50" r="12" fill="white" /></svg></div><span class="text-xl font-black text-blue-800 dark:text-blue-300 tracking-tighter leading-none font-black">${g}. Gen - ${GEN_NAMES[g]}</span><span class="text-[10px] font-bold text-gray-500 dark:text-gray-300 mt-3 whitespace-nowrap bg-gray-100 dark:bg-slate-800 px-3 py-1 rounded-full border border-gray-200 dark:border-slate-700 font-black">(${count} / ${GEN_TOTALS[g]})</span></button>`; }).join('')}</div></div>`;
             } else if (activeScreen === 'gallery-gen') {
